@@ -134,4 +134,30 @@ class ResidualConnection(nn.Module):
     def forward(self, x, sublayer):
         return x + self.dropout(sublayer(self.norm(x))) # Some papers switch "add" and "norm" -- here we normalize first and add later
 
-    
+
+class EncoderBlock(nn.Module):
+
+    def __init__(self, self_attention_block: MultiHeadAttentionBlock, feed_forward_block: FeedForwardBlock, dropout: float) -> None:
+        super().__init__()
+        self.self_attention_block = self_attention_block
+        self.feed_forward_block = feed_forward_block
+        self.residual_connections = nn.ModuleList([ResidualConnection(dropout) for _ in range(2)]) # ModuleList() is needed for the modules to be properly found during optimization; it behaves like a list of indexing and iteration
+
+    def forward(self, x, src_mask):
+        x = self.residual_connections[0](x, lambda x: self.self_attention_block(x, x, x, src_mask)) # In this case we need the lambda function because the self_attention_block takes 4 arguments (q,k,v,mask) instead of just one like the sublayer() expects
+        x = self.residual_connections[1](x, self.feed_forward_block)
+
+        return x
+
+class Encoder(nn.Module):
+
+    def __init__(self, layers: nn.ModuleList) -> None:
+        super().__init__()
+        self.layers = layers
+        self.norm = LayerNormalization()
+
+    def forward(self, x, mask):
+        for layer in self.layers:
+            x = layer(x, mask)
+            
+        return self.norm(x)
